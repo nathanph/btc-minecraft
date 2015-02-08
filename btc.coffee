@@ -161,3 +161,19 @@ changeAddress = "1MWyHEGdHMgLozTsyJrwdsSASUWDi4uQdn"
 #consolidatePool(privateKeys, outputAddress, changeAddress)
 
 setInterval(pendingUserAddresses, 10000)
+
+generateCapitalOneAddress = () ->
+    privateKey = bitcore.PrivateKey()
+    publicKey = privateKey.toPublicKey()
+
+    privateKeyString = privateKey.toWIF()
+    # TODO: Store privateKeyString in database here.
+
+    publicKeyString = publicKey.toString()
+    # TODO: Store publicKeyString in database here.
+
+    address = publicKey.toAddress()
+
+    return address.toString()
+
+
