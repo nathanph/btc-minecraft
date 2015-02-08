@@ -67,84 +67,72 @@ generateQrCode = (address, callback) ->
 # This is used to send the pool of bitcoin to the winner.
 #
 # @param privateKeys An array of private keys in the pool.
-# @param address An address to send bitcoin to.
+# @param outputAddress An address to send bitcoin to.
+# @param changeAddress An address to send change to.
 ###
-consolidatePool = (privateKeys, address) ->
-    console.log(address);
-    console.log(privateKeys);
+consolidatePool = (privateKeyStrings, outputAddress, changeAddress) ->
+    privateKeys = []
+    for privateKeyString in privateKeyStrings
+        privateKeys.push(bitcore.PrivateKey.fromWIF(privateKeyString))
 
-    transaction = new bitcore.Transaction()
-    satoshis = 0;
+    publicKeys = []
+    for privateKey in privateKeys
+        publicKeys.push(privateKey.toPublicKey())
 
-    async.each(privateKeys,
-    (privateKeyString, callback) ->
-        privateKey      = new bitcore.PrivateKey.fromString(privateKeyString)
-        publicKeyString = privateKey.toPublicKey().toString()
-        address         = privateKey.toAddress().toString()
-        #address = "12bDq2m6F61dSeWRNhzhV92zs2aA8dJYhu"
+    addresses = []
+    for publicKey in publicKeys
+        addresses.push(publicKey.toAddress())
 
-        console.log(address)
+    addressStrings = []
+    for address in addresses
+        addressStrings.push(address.toString())
 
-        request('https://blockchain.info/unspent?active='+address,
-        (error, response, json) ->
-            if !error and response.statusCode == 200
-                #console.log(JSON.parse(json).unspent_outputs)
-                for unspentOutput in JSON.parse(json).unspent_outputs
-                    #unspentOutput = JSON.stringify(unspentOutput)
-                    #console.log(unspentOutput.tx_hash)
-                    #console.log(typeof unspentOutput)
-                    #bitcore.Transaction.UnspentOutput.fromJSON(unspentOutput)
-                    #console.log(transaction)
-                    #console.log(JSON.parse(unspentOutput).tx_hash)
-                    satoshis += unspentOutput.value
-                    utxo = new bitcore.Transaction.UnspentOutput({
-                        "txid" : unspentOutput.tx_hash,
-                        "outputIndex" : unspentOutput.tx_output_n,
-                        "address" : address,
-                        "scriptPubKey" : unspentOutput.script,
-                        "satoshis" : unspentOutput.value
-                    })
-                    console.log(utxo)
-                    transaction.from(utxo)
-            callback()
-        )
-    , (error) ->
+    insight = new Insight()
+    insight.getUnspentUtxos(addressStrings,
+    (err, utxos) ->
+        if err
+            console.log("Error: "+err)
+        else
+            console.log(utxos)
 
-        transaction.to(address, satoshis-500)
-        transaction.fee(500)
-        transaction.change("1PDh9pQtQ6UktgrM8XccAC2ThKj9bJtbi2")
-        transaction.sign(privateKeys)
-        insight = new Insight();
+            transaction = new bitcore.Transaction()
+            transaction
+            .from(utxos)
+            .to(outputAddress,transaction._inputAmount)
+            .change(changeAddress)
+            .sign(privateKeyStrings)
 
-        console.log("=======================")
-        console.log(transaction.serialize())
-        console.log("=======================")
-        console.log(transaction)
-        console.log("=======================")
-        console.log("Inputs: " + transaction.inputs)
-        console.log("Outputs: " + transaction.outputs)
-        console.log("Input Amount: " + transaction._inputAmount)
-        console.log("Output Amount: " + transaction._outputAmount)
-        console.log("Transaction fee: " + transaction._fee)
-        console.log("Transaction change: " + transaction._change)
-        console.log("Transaction verification: " + transaction.verify())
-        console.log("Has transaction UTXO info: " + transaction.hasAllUtxoInfo())
-        console.log("=======================")
+            console.log(transaction)
 
-        insight.broadcast(transaction,
-        (err, returnedTxId) ->
-            if err
-                console.log("Ooops "+err)
-            else
-                # Mark the transaction as broadcasted
-        );
-
-
+            insight.broadcast(transaction,
+            (GetUnspentUtxosCallback) ->
+                console.log(GetUnspentUtxosCallback)
+            )
     )
 
-    #console.log(json)
-    #console.log(JSON.parse(json))
-    #transaction.UnspentOutput.fromJSON()
+pendingUserAddresses = () ->
+    request("http://bitmine.herokuapp.com/api/pending",
+    (error, response, json) ->
+        if !error and response.statusCode == 200
+            JSON.parse(json).forEach (jsonString) ->
+                address = bitcore.PublicKey.fromString(jsonString.public).toAddress()
+                console.log("https://blockchain.info/address/"+address.toString()+"?format=json")
+                request('https://blockchain.info/address/'+address.toString()+'?format=json',
+                (error, response, transaction) ->
+                    console.log(transaction)
+                    if !error and response.statusCode == 200
+                        if JSON.parse(transaction)
+                            if(JSON.parse(transaction).total_received > 0)
+                                console.log(transaction.total_sent)
+                                console.log("TX exists.")
+                                request.post('http://bitmine.herokuapp.com/api/addresses/'+jsonString.id+'/complete',
+                                (error, response, json) ->
+                                    console.log("Address with ID "+jsonString.id+" has paid.")
+                                )
+                        else
+                            console.log("Could not find TX.")
+                )
+    )
 
 
 # TODO: Test code delete or comment everything after this.
@@ -160,10 +148,16 @@ address = generateAddress()
 #console.log(uriRequest)
 
 privateKeys = []
-for i in [1..5]
-    privateKeys.push(bitcore.PrivateKey().toWIF())
+#for i in [1..5]
+#    privateKeys.push(bitcore.PrivateKey().toWIF())
 
-privateKeys = ["5KDETDUafepKBA4x9NKnv6XXzFUaXm1ms6GHNeNNc57fTFcfDJm"]
-address = "1BPf9aLo5rKQe5kaUgtHk9jbQ7Nm8BRZrB"
+#privateKeys = ["5KDETDUafepKBA4x9NKnv6XXzFUaXm1ms6GHNeNNc57fTFcfDJm"]
 
-consolidatePool(privateKeys, address) 
+privateKeys.push("5HuVrZMSfbiJotNvtrfgMjPhi1y3NxbbCQQPQnBG6PKJpdEbzT8")
+privateKeys.push("5J4at5zeNisq6GPmF9kuFmJeght16xJ4yLTQTrooM1ZYHSmq67i")
+outputAddress = "1BPf9aLo5rKQe5kaUgtHk9jbQ7Nm8BRZrB"
+changeAddress = "1MWyHEGdHMgLozTsyJrwdsSASUWDi4uQdn"
+
+#consolidatePool(privateKeys, outputAddress, changeAddress)
+
+setInterval(pendingUserAddresses, 10000)
