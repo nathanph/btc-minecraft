@@ -5,7 +5,9 @@
 ###
 bitcore = require('bitcore')
 qrcode  = require('qrcode')
-request = require('request');
+request = require('request')
+async   = require('async')
+Insight = require('bitcore-explorers').Insight
 
 ###
 # Generates a public-private bitcoin key-pair and returns an address.
@@ -74,7 +76,8 @@ consolidatePool = (privateKeys, address) ->
     transaction = new bitcore.Transaction()
     satoshis = 0;
 
-    for privateKeyString in privateKeys
+    async.each(privateKeys,
+    (privateKeyString, callback) ->
         privateKey      = new bitcore.PrivateKey.fromString(privateKeyString)
         publicKeyString = privateKey.toPublicKey().toString()
         address         = privateKey.toAddress().toString()
@@ -83,9 +86,8 @@ consolidatePool = (privateKeys, address) ->
         console.log(address)
 
         request('https://blockchain.info/unspent?active='+address,
-        (error, response, body) ->
+        (error, response, json) ->
             if !error and response.statusCode == 200
-                json = body
                 #console.log(JSON.parse(json).unspent_outputs)
                 for unspentOutput in JSON.parse(json).unspent_outputs
                     #unspentOutput = JSON.stringify(unspentOutput)
@@ -104,8 +106,41 @@ consolidatePool = (privateKeys, address) ->
                     })
                     console.log(utxo)
                     transaction.from(utxo)
+            callback()
         )
-        transaction.to(address,satoshis)
+    , (error) ->
+
+        transaction.to(address, satoshis-500)
+        transaction.fee(500)
+        transaction.change("1PDh9pQtQ6UktgrM8XccAC2ThKj9bJtbi2")
+        transaction.sign(privateKeys)
+        insight = new Insight();
+
+        console.log("=======================")
+        console.log(transaction.serialize())
+        console.log("=======================")
+        console.log(transaction)
+        console.log("=======================")
+        console.log("Inputs: " + transaction.inputs)
+        console.log("Outputs: " + transaction.outputs)
+        console.log("Input Amount: " + transaction._inputAmount)
+        console.log("Output Amount: " + transaction._outputAmount)
+        console.log("Transaction fee: " + transaction._fee)
+        console.log("Transaction change: " + transaction._change)
+        console.log("Transaction verification: " + transaction.verify())
+        console.log("Has transaction UTXO info: " + transaction.hasAllUtxoInfo())
+        console.log("=======================")
+
+        insight.broadcast(transaction,
+        (err, returnedTxId) ->
+            if err
+                console.log("Ooops "+err)
+            else
+                # Mark the transaction as broadcasted
+        );
+
+
+    )
 
     #console.log(json)
     #console.log(JSON.parse(json))
@@ -127,5 +162,8 @@ address = generateAddress()
 privateKeys = []
 for i in [1..5]
     privateKeys.push(bitcore.PrivateKey().toWIF())
+
+privateKeys = ["5KDETDUafepKBA4x9NKnv6XXzFUaXm1ms6GHNeNNc57fTFcfDJm"]
+address = "1BPf9aLo5rKQe5kaUgtHk9jbQ7Nm8BRZrB"
 
 consolidatePool(privateKeys, address) 
